@@ -1,193 +1,292 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Instagram Video Downloader</title>
-  <style>
-    :root {
-      --bg: #0f0f14;
-      --card: #1a1a23;
-      --text: #f2f2f7;
-      --muted: #9a9aab;
-      --border: #2a2a38;
-      --grad: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    }
-    .card {
-      width: 100%;
-      max-width: 520px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 32px 28px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-    }
-    h1 {
-      font-size: 1.6rem;
-      text-align: center;
-      background: var(--grad);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-    .sub { text-align: center; color: var(--muted); font-size: 0.92rem; margin: 8px 0 24px; }
-    .row { display: flex; flex-direction: column; gap: 12px; }
-    input[type="url"], input[type="text"] {
-      width: 100%;
-      padding: 14px 16px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #12121a;
-      color: var(--text);
-      font-size: 1rem;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    input:focus { border-color: #dc2743; }
-    button {
-      padding: 14px;
-      border: none;
-      border-radius: 12px;
-      background: var(--grad);
-      color: #fff;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.15s, opacity 0.15s;
-    }
-    button:hover { transform: translateY(-1px); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-    .msg { margin-top: 16px; font-size: 0.92rem; text-align: center; min-height: 1.2em; }
-    .msg.error { color: #ff6b6b; }
-    .msg.ok { color: #51cf66; }
-    .result { margin-top: 20px; display: none; }
-    .result video { width: 100%; max-height: 420px; border-radius: 12px; background: #000; }
-    .result a {
-      display: block;
-      margin-top: 12px;
-      text-align: center;
-      text-decoration: none;
-      padding: 14px;
-      border-radius: 12px;
-      background: #2b8a3e;
-      color: #fff;
-      font-weight: 600;
-    }
-    details { margin-top: 20px; color: var(--muted); font-size: 0.85rem; }
-    summary { cursor: pointer; margin-bottom: 10px; }
-    .spinner {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid rgba(255,255,255,0.4);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    footer { margin-top: 20px; text-align: center; color: var(--muted); font-size: 0.78rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Instagram Video Downloader</h1>
-    <p class="sub">Paste a public post or reel link to get the video.</p>
-
-    <div class="row">
-      <input id="url" type="url" placeholder="https://www.instagram.com/reel/XXXXXXXXXXX/" autocomplete="off" />
-      <button id="btn">Get Video</button>
-    </div>
-
-    <p id="msg" class="msg"></p>
-
-    <section id="result" class="result">
-      <video id="player" controls playsinline></video>
-      <a id="dl" href="#" download="instagram_video.mp4">⬇️ Download MP4</a>
-    </section>
-
-    <details>
-      <summary>Backend settings</summary>
-      <div class="row">
-        <input id="api" type="text" placeholder="https://your-backend.onrender.com" />
-        <button id="save" type="button">Save backend URL</button>
-      </div>
-    </details>
-
-    <footer>Only download content you own or have permission to use.</footer>
-  </main>
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const urlInput = $("url"), btn = $("btn"), msg = $("msg"), result = $("result");
-    const player = $("player"), dl = $("dl"), apiInput = $("api"), saveBtn = $("save");
-
-    const DEFAULT_API = "http://127.0.0.1:5000";
-    const IG_REGEX = /^https?:\/\/(www\.)?instagram\.com\/(p|reel|reels|tv)\/[A-Za-z0-9_\-]+\/?(\?.*)?$/;
-
-    function getApi() {
-      try { return localStorage.getItem("ig_api") || DEFAULT_API; } catch { return DEFAULT_API; }
-    }
-    apiInput.value = getApi();
-
-    saveBtn.addEventListener("click", () => {
-      const v = apiInput.value.trim().replace(/\/+$/, "");
-      try { localStorage.setItem("ig_api", v); } catch {}
-      setMsg("Backend URL saved.", "ok");
-    });
-
-    function setMsg(text, type = "") {
-      msg.className = "msg " + type;
-      msg.textContent = text;
-    }
-
-    async function getVideo() {
-      const url = urlInput.value.trim();
-      result.style.display = "none";
-
-      if (!url) return setMsg("Please enter a URL.", "error");
-      if (!IG_REGEX.test(url)) return setMsg("Enter a valid Instagram post/reel URL.", "error");
-
-      btn.disabled = true;
-      msg.className = "msg";
-      msg.innerHTML = '<span class="spinner"></span>Fetching video...';
-
-      try {
-        const res = await fetch(getApi().replace(/\/+$/, "") + "/api/download", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url })
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "Download failed.");
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Instagram Video Downloader</title>
+    <style>
+         :root {
+            --bg: #0f0f14;
+            --card: #1a1a23;
+            --text: #f2f2f7;
+            --muted: #9a9aab;
+            --border: #2a2a38;
+            --grad: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
         }
-        const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        player.src = objectUrl;
-        dl.href = objectUrl;
-        result.style.display = "block";
-        setMsg("Video ready!", "ok");
-      } catch (e) {
-        setMsg(e.message === "Failed to fetch" ? "Cannot reach backend. Check the backend URL." : e.message, "error");
-      } finally {
-        btn.disabled = false;
-      }
-    }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+        
+        .card {
+            width: 100%;
+            max-width: 520px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px 28px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+        }
+        
+        h1 {
+            font-size: 1.6rem;
+            text-align: center;
+            background: var(--grad);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .sub {
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.92rem;
+            margin: 8px 0 24px;
+        }
+        
+        .row {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        input[type="url"],
+        input[type="text"] {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: #12121a;
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        input:focus {
+            border-color: #dc2743;
+        }
+        
+        button {
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            background: var(--grad);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        
+        button:hover {
+            transform: translateY(-1px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .msg {
+            margin-top: 16px;
+            font-size: 0.92rem;
+            text-align: center;
+            min-height: 1.2em;
+        }
+        
+        .msg.error {
+            color: #ff6b6b;
+        }
+        
+        .msg.ok {
+            color: #51cf66;
+        }
+        
+        .result {
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .result video {
+            width: 100%;
+            max-height: 420px;
+            border-radius: 12px;
+            background: #000;
+        }
+        
+        .result a {
+            display: block;
+            margin-top: 12px;
+            text-align: center;
+            text-decoration: none;
+            padding: 14px;
+            border-radius: 12px;
+            background: #2b8a3e;
+            color: #fff;
+            font-weight: 600;
+        }
+        
+        details {
+            margin-top: 20px;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+        
+        summary {
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        footer {
+            margin-top: 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+    </style>
+</head>
 
-    btn.addEventListener("click", getVideo);
-    urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") getVideo(); });
-  </script>
+<body>
+    <main class="card">
+        <h1>Instagram Video Downloader</h1>
+        <p class="sub">Paste a public post or reel link to get the video.</p>
+
+        <div class="row">
+            <input id="url" type="url" placeholder="https://www.instagram.com/reel/XXXXXXXXXXX/" autocomplete="off" />
+            <button id="btn">Get Video</button>
+        </div>
+
+        <p id="msg" class="msg"></p>
+
+        <section id="result" class="result">
+            <video id="player" controls playsinline></video>
+            <a id="dl" href="#" download="instagram_video.mp4">⬇️ Download MP4</a>
+        </section>
+
+        <details>
+            <summary>Backend settings</summary>
+            <div class="row">
+                <input id="api" type="text" placeholder="https://your-backend.onrender.com" />
+                <button id="save" type="button">Save backend URL</button>
+            </div>
+        </details>
+
+        <footer>Only download content you own or have permission to use.</footer>
+    </main>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const urlInput = $("url"),
+            btn = $("btn"),
+            msg = $("msg"),
+            result = $("result");
+        const player = $("player"),
+            dl = $("dl"),
+            apiInput = $("api"),
+            saveBtn = $("save");
+
+        const DEFAULT_API = "http://127.0.0.1:5000";
+        const IG_REGEX = /^https?:\/\/(www\.)?instagram\.com\/(p|reel|reels|tv)\/[A-Za-z0-9_\-]+\/?(\?.*)?$/;
+
+        function getApi() {
+            try {
+                return localStorage.getItem("ig_api") || DEFAULT_API;
+            } catch {
+                return DEFAULT_API;
+            }
+        }
+        apiInput.value = getApi();
+
+        saveBtn.addEventListener("click", () => {
+            const v = apiInput.value.trim().replace(/\/+$/, "");
+            try {
+                localStorage.setItem("ig_api", v);
+            } catch {}
+            setMsg("Backend URL saved.", "ok");
+        });
+
+        function setMsg(text, type = "") {
+            msg.className = "msg " + type;
+            msg.textContent = text;
+        }
+
+        async function getVideo() {
+            const url = urlInput.value.trim();
+            result.style.display = "none";
+
+            if (!url) return setMsg("Please enter a URL.", "error");
+            if (!IG_REGEX.test(url)) return setMsg("Enter a valid Instagram post/reel URL.", "error");
+
+            btn.disabled = true;
+            msg.className = "msg";
+            msg.innerHTML = '<span class="spinner"></span>Fetching video...';
+
+            try {
+                const res = await fetch(getApi().replace(/\/+$/, "") + "/api/download", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        url
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || "Download failed.");
+                }
+                const blob = await res.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                player.src = objectUrl;
+                dl.href = objectUrl;
+                result.style.display = "block";
+                setMsg("Video ready!", "ok");
+            } catch (e) {
+                setMsg(e.message === "Failed to fetch" ? "Cannot reach backend. Check the backend URL." : e.message, "error");
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        btn.addEventListener("click", getVideo);
+        urlInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") getVideo();
+        });
+    </script>
 </body>
+
 </html>
